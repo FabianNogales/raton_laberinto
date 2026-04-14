@@ -1,63 +1,98 @@
+﻿from __future__ import annotations
+
 from collections import deque
+from time import perf_counter
+from typing import Deque, Dict, Set
+
+from BusquedaBase import (
+    MOVIMIENTOS_CARDINALES,
+    ErrorEscenario,
+    Posicion,
+    ResultadoBusqueda,
+    reconstruir_ruta,
+    validar_escenario,
+)
+
 
 class SolucionadorAmplitud:
-    def __init__(self, mapaLaberinto, inicioRaton, metaQueso):
+    def __init__(self, mapaLaberinto, inicioRaton: Posicion, metaQueso: Posicion):
         self.mapaLaberinto = mapaLaberinto
         self.inicioRaton = inicioRaton
         self.metaQueso = metaQueso
-        self.totalFilas = len(mapaLaberinto)
-        self.totalColumnas = len(mapaLaberinto[0])
 
-    def BuscarCaminoCorto(self):
-        """
-        Ejecuta la Búsqueda en Amplitud (BFS) para encontrar la ruta más corta.
-        """
-        colaDeNodos = deque([self.inicioRaton])
-        nodosVisitados = {self.inicioRaton}
-        registroDePadres = {}
-        
-        # Direcciones: Arriba, Abajo, Izquierda, Derecha
-        movimientosPosibles = [(-1, 0), (1, 0), (0, -1), (0, 1)]
-        seEncontroMeta = False
+    def Resolver(self) -> ResultadoBusqueda:
+        """Ejecuta Busqueda en Amplitud (BFS) sobre un mapa en grilla."""
+        inicio_tiempo = perf_counter()
 
-        while colaDeNodos:
-            nodoActual = colaDeNodos.popleft()
+        try:
+            validar_escenario(self.mapaLaberinto, self.inicioRaton, self.metaQueso)
+        except ErrorEscenario as error:
+            tiempo_total = perf_counter() - inicio_tiempo
+            return ResultadoBusqueda(
+                camino=[],
+                historial_expansion=[],
+                nodos_generados=0,
+                nodos_expandidos=0,
+                tiempo_segundos=tiempo_total,
+                encontro_solucion=False,
+                mensaje=str(error),
+            )
 
-            # Test de Meta
-            if nodoActual == self.metaQueso:
-                seEncontroMeta = True
+        cola_de_nodos: Deque[Posicion] = deque([self.inicioRaton])
+        nodos_visitados: Set[Posicion] = {self.inicioRaton}
+        registro_de_padres: Dict[Posicion, Posicion] = {}
+        historial_expansion: list[Posicion] = []
+
+        nodos_generados = 1
+        nodos_expandidos = 0
+        encontro_meta = False
+
+        total_filas = len(self.mapaLaberinto)
+        total_columnas = len(self.mapaLaberinto[0])
+
+        while cola_de_nodos:
+            nodo_actual = cola_de_nodos.popleft()
+            historial_expansion.append(nodo_actual)
+            nodos_expandidos += 1
+
+            if nodo_actual == self.metaQueso:
+                encontro_meta = True
                 break
 
-            # Expandir vecinos
-            for movimiento in movimientosPosibles:
-                filaVecina = nodoActual[0] + movimiento[0]
-                columnaVecina = nodoActual[1] + movimiento[1]
-                nodoVecino = (filaVecina, columnaVecina)
+            for mov_fila, mov_columna in MOVIMIENTOS_CARDINALES:
+                fila_vecina = nodo_actual[0] + mov_fila
+                columna_vecina = nodo_actual[1] + mov_columna
+                nodo_vecino = (fila_vecina, columna_vecina)
 
-                # Validar límites de la matriz 10x10
-                if 0 <= filaVecina < self.totalFilas and 0 <= columnaVecina < self.totalColumnas:
-                    # Validar que sea camino (0) y no se haya visitado antes
-                    if self.mapaLaberinto[filaVecina][columnaVecina] == 0 and nodoVecino not in nodosVisitados:
-                        nodosVisitados.add(nodoVecino)
-                        registroDePadres[nodoVecino] = nodoActual
-                        colaDeNodos.append(nodoVecino)
+                if 0 <= fila_vecina < total_filas and 0 <= columna_vecina < total_columnas:
+                    if (
+                        self.mapaLaberinto[fila_vecina][columna_vecina] == 0
+                        and nodo_vecino not in nodos_visitados
+                    ):
+                        nodos_visitados.add(nodo_vecino)
+                        registro_de_padres[nodo_vecino] = nodo_actual
+                        cola_de_nodos.append(nodo_vecino)
+                        nodos_generados += 1
 
-        if seEncontroMeta:
-            return self.ReconstruirRutaFinal(registroDePadres)
+        tiempo_total = perf_counter() - inicio_tiempo
+
+        if encontro_meta:
+            camino = reconstruir_ruta(registro_de_padres, self.inicioRaton, self.metaQueso)
+            mensaje = "Solucion encontrada."
         else:
-            return []
+            camino = []
+            mensaje = "No existe ruta desde el inicio hasta la meta."
 
-    def ReconstruirRutaFinal(self, registroDePadres):
-        """
-        Traza el camino de regreso desde el queso hasta el ratón.
-        """
-        rutaCompleta = []
-        nodoActual = self.metaQueso
+        return ResultadoBusqueda(
+            camino=camino,
+            historial_expansion=historial_expansion,
+            nodos_generados=nodos_generados,
+            nodos_expandidos=nodos_expandidos,
+            tiempo_segundos=tiempo_total,
+            encontro_solucion=encontro_meta,
+            mensaje=mensaje,
+        )
 
-        while nodoActual != self.inicioRaton:
-            rutaCompleta.append(nodoActual)
-            nodoActual = registroDePadres.get(nodoActual)
-
-        rutaCompleta.append(self.inicioRaton)
-        rutaCompleta.reverse() # Invertir para que empiece desde el inicio
-        return rutaCompleta
+    def BuscarCaminoCorto(self):
+        """Compatibilidad con la version original: retorna solo la ruta final."""
+        return self.Resolver().camino

@@ -1,80 +1,109 @@
+﻿from __future__ import annotations
+
 import heapq
+from time import perf_counter
+from typing import Dict, Set
+
+from BusquedaBase import (
+    MOVIMIENTOS_CARDINALES,
+    ErrorEscenario,
+    Posicion,
+    ResultadoBusqueda,
+    reconstruir_ruta,
+    validar_escenario,
+)
+
 
 class SolucionadorVoraz:
-    def __init__(self, mapaLaberinto, inicioRaton, metaQueso):
+    def __init__(self, mapaLaberinto, inicioRaton: Posicion, metaQueso: Posicion):
         self.mapaLaberinto = mapaLaberinto
         self.inicioRaton = inicioRaton
         self.metaQueso = metaQueso
-        self.totalFilas = len(mapaLaberinto)
-        self.totalColumnas = len(mapaLaberinto[0])
 
-    def CalcularHeuristica(self, nodoActual):
-        """
-        Calcula la Distancia Manhattan desde el nodo actual hasta el queso.
-        """
-        distanciaFila = abs(nodoActual[0] - self.metaQueso[0])
-        distanciaColumna = abs(nodoActual[1] - self.metaQueso[1])
-        return distanciaFila + distanciaColumna
+    def CalcularHeuristica(self, nodoActual: Posicion) -> int:
+        """Distancia Manhattan al nodo meta."""
+        distancia_fila = abs(nodoActual[0] - self.metaQueso[0])
+        distancia_columna = abs(nodoActual[1] - self.metaQueso[1])
+        return distancia_fila + distancia_columna
 
-    def BuscarCaminoVoraz(self):
-        """
-        Ejecuta la Búsqueda Voraz (Greedy Search) guiada por la heurística.
-        """
-        # La cola de prioridad guarda tuplas: (valorHeuristico, nodo)
-        colaDePrioridad = []
-        heuristicaInicial = self.CalcularHeuristica(self.inicioRaton)
-        heapq.heappush(colaDePrioridad, (heuristicaInicial, self.inicioRaton))
-        
-        nodosVisitados = {self.inicioRaton}
-        registroDePadres = {}
-        
-        # Direcciones: Arriba, Abajo, Izquierda, Derecha
-        movimientosPosibles = [(-1, 0), (1, 0), (0, -1), (0, 1)]
-        seEncontroMeta = False
+    def Resolver(self) -> ResultadoBusqueda:
+        """Ejecuta Busqueda Voraz (Greedy Best-First Search)."""
+        inicio_tiempo = perf_counter()
 
-        while colaDePrioridad:
-            # Extraemos SIEMPRE el nodo con la heurística más baja (más cercano a la meta)
-            valorHeuristico, nodoActual = heapq.heappop(colaDePrioridad)
+        try:
+            validar_escenario(self.mapaLaberinto, self.inicioRaton, self.metaQueso)
+        except ErrorEscenario as error:
+            tiempo_total = perf_counter() - inicio_tiempo
+            return ResultadoBusqueda(
+                camino=[],
+                historial_expansion=[],
+                nodos_generados=0,
+                nodos_expandidos=0,
+                tiempo_segundos=tiempo_total,
+                encontro_solucion=False,
+                mensaje=str(error),
+            )
 
-            # Test de Meta
-            if nodoActual == self.metaQueso:
-                seEncontroMeta = True
+        cola_de_prioridad: list[tuple[int, Posicion]] = []
+        heuristica_inicial = self.CalcularHeuristica(self.inicioRaton)
+        heapq.heappush(cola_de_prioridad, (heuristica_inicial, self.inicioRaton))
+
+        nodos_visitados: Set[Posicion] = {self.inicioRaton}
+        registro_de_padres: Dict[Posicion, Posicion] = {}
+        historial_expansion: list[Posicion] = []
+
+        nodos_generados = 1
+        nodos_expandidos = 0
+        encontro_meta = False
+
+        total_filas = len(self.mapaLaberinto)
+        total_columnas = len(self.mapaLaberinto[0])
+
+        while cola_de_prioridad:
+            _, nodo_actual = heapq.heappop(cola_de_prioridad)
+            historial_expansion.append(nodo_actual)
+            nodos_expandidos += 1
+
+            if nodo_actual == self.metaQueso:
+                encontro_meta = True
                 break
 
-            # Expandir vecinos
-            for movimiento in movimientosPosibles:
-                filaVecina = nodoActual[0] + movimiento[0]
-                columnaVecina = nodoActual[1] + movimiento[1]
-                nodoVecino = (filaVecina, columnaVecina)
+            for mov_fila, mov_columna in MOVIMIENTOS_CARDINALES:
+                fila_vecina = nodo_actual[0] + mov_fila
+                columna_vecina = nodo_actual[1] + mov_columna
+                nodo_vecino = (fila_vecina, columna_vecina)
 
-                # Validar límites de la matriz 10x10
-                if 0 <= filaVecina < self.totalFilas and 0 <= columnaVecina < self.totalColumnas:
-                    # Validar que sea camino (0) y no se haya visitado antes
-                    if self.mapaLaberinto[filaVecina][columnaVecina] == 0 and nodoVecino not in nodosVisitados:
-                        nodosVisitados.add(nodoVecino)
-                        registroDePadres[nodoVecino] = nodoActual
-                        
-                        # Calculamos la heurística del vecino y lo metemos a la cola
-                        heuristicaVecino = self.CalcularHeuristica(nodoVecino)
-                        heapq.heappush(colaDePrioridad, (heuristicaVecino, nodoVecino))
+                if 0 <= fila_vecina < total_filas and 0 <= columna_vecina < total_columnas:
+                    if (
+                        self.mapaLaberinto[fila_vecina][columna_vecina] == 0
+                        and nodo_vecino not in nodos_visitados
+                    ):
+                        nodos_visitados.add(nodo_vecino)
+                        registro_de_padres[nodo_vecino] = nodo_actual
 
-        if seEncontroMeta:
-            return self.ReconstruirRutaFinal(registroDePadres)
+                        heuristica_vecino = self.CalcularHeuristica(nodo_vecino)
+                        heapq.heappush(cola_de_prioridad, (heuristica_vecino, nodo_vecino))
+                        nodos_generados += 1
+
+        tiempo_total = perf_counter() - inicio_tiempo
+
+        if encontro_meta:
+            camino = reconstruir_ruta(registro_de_padres, self.inicioRaton, self.metaQueso)
+            mensaje = "Solucion encontrada."
         else:
-            return []
+            camino = []
+            mensaje = "No existe ruta desde el inicio hasta la meta."
 
-    def ReconstruirRutaFinal(self, registroDePadres):
-        """
-        Traza el camino de regreso desde el queso hasta el ratón.
-        """
-        rutaCompleta = []
-        nodoActual = self.metaQueso
+        return ResultadoBusqueda(
+            camino=camino,
+            historial_expansion=historial_expansion,
+            nodos_generados=nodos_generados,
+            nodos_expandidos=nodos_expandidos,
+            tiempo_segundos=tiempo_total,
+            encontro_solucion=encontro_meta,
+            mensaje=mensaje,
+        )
 
-        while nodoActual != self.inicioRaton:
-            rutaCompleta.append(nodoActual)
-            nodoActual = registroDePadres.get(nodoActual)
-
-        rutaCompleta.append(self.inicioRaton)
-        rutaCompleta.reverse() # Invertir para que empiece desde el inicio
-        return rutaCompleta
-    
+    def BuscarCaminoVoraz(self):
+        """Compatibilidad con la version original: retorna solo la ruta final."""
+        return self.Resolver().camino
